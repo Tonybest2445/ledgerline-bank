@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ledgerline — Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background: #F6F1E4;
+    color: #16231D;
+    margin: 0;
+    padding: 40px 20px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-family: Georgia, serif; font-size: 26px; margin-bottom: 4px; }
+  .mode-badge {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: #C6952C;
+    color: #0F2B25;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: #FCFAF3;
+    border: 1px solid #DCD3BA;
+    border-radius: 6px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 14px; }
+  label { display: block; font-size: 12px; margin-bottom: 4px; color: #5B6B62; }
+  input, select {
+    width: 100%;
+    padding: 9px 10px;
+    margin-bottom: 12px;
+    border: 1px solid #DCD3BA;
+    border-radius: 3px;
+    font-size: 14px;
+    background: #fff;
+  }
+  button {
+    background: #0F2B25;
+    color: #F3EEDD;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 3px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #16362F; }
+  button.secondary { background: transparent; color: #0F2B25; border: 1px solid #0F2B25; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .acct-list { list-style: none; padding: 0; margin: 0; }
+  .acct-list li {
+    display: flex; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px dashed #DCD3BA;
+    font-size: 14px;
+  }
+  .tx-list { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; }
+  .tx-list li { padding: 6px 0; border-bottom: 1px dashed #DCD3BA; display: flex; justify-content: space-between; }
+  .error { color: #B23A2E; font-size: 13px; margin-bottom: 10px; }
+  .hidden { display: none; }
+  .muted { color: #5B6B62; font-size: 13px; }
+  code { background: #eee; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>§ Ledgerline — Dashboard</h1>
+  <div id="modeBadge" class="mode-badge">checking mode…</div>
+
+  <!-- AUTH -->
+  <div id="authSection" class="card">
+    <h2>Sign in or create an account</h2>
+    <div id="authError" class="error hidden"></div>
+    <label>Full name (signup only)</label>
+    <input id="fullName" placeholder="Jane Doe" />
+    <label>Email</label>
+    <input id="email" placeholder="you@example.com" />
+    <label>Password</label>
+    <input id="password" type="password" placeholder="At least 8 characters" />
+    <div class="row">
+      <button onclick="signup()">Create account</button>
+      <button class="secondary" onclick="login()">Sign in</button>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashSection" class="hidden">
+    <div class="card">
+      <div class="row">
+        <h2>Your accounts</h2>
+        <button class="secondary" onclick="logout()">Sign out</button>
+      </div>
+      <ul id="accountList" class="acct-list"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Open a new account</h2>
+      <label>Type</label>
+      <select id="newAcctType">
+        <option value="checking">Checking</option>
+        <option value="savings">Savings</option>
+        <option value="business_checking">Business checking</option>
+        <option value="business_savings">Business savings</option>
+      </select>
+      <label>Nickname</label>
+      <input id="newAcctName" placeholder="My checking account" />
+      <button onclick="openAccount()">Open account</button>
+    </div>
+
+    <div class="card" id="seedCard">
+      <h2>Fund an account (simulated mode only)</h2>
+      <label>Account</label>
+      <select id="seedAcct"></select>
+      <label>Amount (USD)</label>
+      <input id="seedAmount" placeholder="500.00" />
+      <button onclick="seedDeposit()">Deposit</button>
+    </div>
+
+    <div class="card">
+      <h2>Transfer money</h2>
+      <label>From account</label>
+      <select id="fromAcct"></select>
+      <label>To account</label>
+      <select id="toAcct"></select>
+      <label>Amount (USD)</label>
+      <input id="transferAmount" placeholder="50.00" />
+      <label>Description</label>
+      <input id="transferDesc" placeholder="Rent" />
+      <button onclick="transferMoney()">Send transfer</button>
+      <div id="transferError" class="error hidden"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent transactions</h2>
+      <label>Account</label>
+      <select id="txAcct" onchange="loadTransactions()"></select>
+      <ul id="txList" class="tx-list"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "http://localhost:4000/api";
+  let token = localStorage.getItem("ledgerline_token");
+
+  function fmt(cents) { return "$" + (cents / 100).toFixed(2); }
+  function toCents(dollars) { return Math.round(parseFloat(dollars) * 100); }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
+  async function checkMode() {
+    try {
+      const h = await api("/health");
+      document.getElementById("modeBadge").textContent =
+        h.bankingMode === "unit_sandbox" ? "MODE: Unit.co sandbox (live test API)" : "MODE: simulated ledger";
+    } catch {
+      document.getElementById("modeBadge").textContent = "Backend not reachable — is it running on :4000?";
+    }
+  }
+
+  async function signup() {
+    try {
+      const data = await api("/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: document.getElementById("fullName").value,
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value,
+        }),
+      });
+      token = data.token;
+      localStorage.setItem("ledgerline_token", token);
+      showDashboard();
+    } catch (err) { showAuthError(err.message); }
+  }
+
+  async function login() {
+    try {
+      const data = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value,
+        }),
+      });
+      token = data.token;
+      localStorage.setItem("ledgerline_token", token);
+      showDashboard();
+    } catch (err) { showAuthError(err.message); }
+  }
+
+  function logout() {
+    token = null;
+    localStorage.removeItem("ledgerline_token");
+    document.getElementById("dashSection").classList.add("hidden");
+    document.getElementById("authSection").classList.remove("hidden");
+  }
+
+  function showAuthError(msg) {
+    const el = document.getElementById("authError");
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+
+  async function showDashboard() {
+    document.getElementById("authSection").classList.add("hidden");
+    document.getElementById("dashSection").classList.remove("hidden");
+    await refreshAccounts();
+  }
+
+  async function refreshAccounts() {
+    const { accounts } = await api("/accounts");
+    const list = document.getElementById("accountList");
+    list.innerHTML = accounts.length
+      ? accounts.map(a => `<li><span>${a.name} <span class="muted">(${a.type})</span></span><strong>${fmt(a.balance_cents)}</strong></li>`).join("")
+      : `<li class="muted">No accounts yet — open one below.</li>`;
+
+    const options = accounts.map(a => `<option value="${a.id}">${a.name} — ${fmt(a.balance_cents)}</option>`).join("");
+    for (const id of ["seedAcct", "fromAcct", "toAcct", "txAcct"]) {
+      document.getElementById(id).innerHTML = options || "<option>No accounts</option>";
+    }
+    if (accounts.length) loadTransactions();
+  }
+
+  async function openAccount() {
+    await api("/accounts", {
+      method: "POST",
+      body: JSON.stringify({
+        type: document.getElementById("newAcctType").value,
+        name: document.getElementById("newAcctName").value,
+      }),
+    });
+    document.getElementById("newAcctName").value = "";
+    await refreshAccounts();
+  }
+
+  async function seedDeposit() {
+    const accountId = document.getElementById("seedAcct").value;
+    const amountCents = toCents(document.getElementById("seedAmount").value || "0");
+    await api(`/accounts/${accountId}/seed-deposit`, {
+      method: "POST",
+      body: JSON.stringify({ amountCents }),
+    });
+    document.getElementById("seedAmount").value = "";
+    await refreshAccounts();
+  }
+
+  async function transferMoney() {
+    const el = document.getElementById("transferError");
+    el.classList.add("hidden");
+    try {
+      await api("/transfers", {
+        method: "POST",
+        body: JSON.stringify({
+          fromAccountId: document.getElementById("fromAcct").value,
+          toAccountId: document.getElementById("toAcct").value,
+          amountCents: toCents(document.getElementById("transferAmount").value || "0"),
+          description: document.getElementById("transferDesc").value,
+        }),
+      });
+      document.getElementById("transferAmount").value = "";
+      document.getElementById("transferDesc").value = "";
+      await refreshAccounts();
+    } catch (err) {
+      el.textContent = err.message;
+      el.classList.remove("hidden");
+    }
+  }
+
+  async function loadTransactions() {
+    const accountId = document.getElementById("txAcct").value;
+    if (!accountId) return;
+    const { transactions } = await api(`/accounts/${accountId}/transactions`);
+    const list = document.getElementById("txList");
+    list.innerHTML = transactions.length
+      ? transactions.map(t => `<li><span>${t.description || t.type}</span><span>${t.direction === "credit" ? "+" : "−"}${fmt(t.amount_cents)}</span></li>`).join("")
+      : `<li class="muted">No transactions yet.</li>`;
+  }
+
+  checkMode();
+  if (token) showDashboard();
+</script>
+</body>
+      </html>
