@@ -34,7 +34,6 @@ async function unitRequest(path, { method = "GET", body } = {}) {
 
   if (!res.ok) {
     const message = json?.errors?.[0]?.title || `Unit API error (${res.status})`;
-    console.log(`[Unit] Request to ${path} failed (${res.status}):`, JSON.stringify(json));
     const err = new Error(message);
     err.details = json;
     throw err;
@@ -68,14 +67,16 @@ async function createCustomer({ fullName, email, ssn = "072052765", dob = "2001-
         email,
         phone: { countryCode: "1", number: "2025550123" },
         ip: "127.0.0.1",
+        occupation: "ArchitectOrEngineer",
+        annualIncome: "Between50kAnd100k",
+        sourceOfIncome: "EmploymentOrPayrollIncome",
       },
     },
   };
 
-  console.log(`[Unit] Creating application for ${email} against ${BASE_URL}`);
   const result = await unitRequest("/applications", { method: "POST", body: payload });
   const applicationId = result.data.id;
-  let status = result.data.attributes.status;
+  let status = result.data.attributes.status; // "Approved" | "Pending" | "Denied" | "AwaitingDocuments" | "PendingReview"
   let customerId = result.data.relationships?.customer?.data?.id || null;
 
   console.log(`[Unit] Application ${applicationId} created with status: ${status}`);
