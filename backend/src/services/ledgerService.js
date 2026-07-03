@@ -116,14 +116,24 @@ async function transferMoney({ fromAccountId, toAccountId, amountCents, descript
   return { id: debitId, status: "completed", externalTxId };
 }
 
-// Simulated-only convenience: fund a brand new account so there's something to demo.
-// (In unit_sandbox mode, real funding requires a real ACH pull or Unit's test deposit tools.)
+// Fund an account. In simulated mode this just credits the local ledger.
+// In unit_sandbox mode this uses Unit's official sandbox tool to simulate a
+// real incoming ACH deposit, then mirrors that credit into our local ledger too.
 async function seedDeposit({ accountId, amountCents, description }) {
+  const account = getAccountById(accountId);
+  if (!account) throw new Error("Account not found");
+
   if (MODE === "unit_sandbox") {
-    throw new Error(
-      "Instant seed deposits aren't available in unit_sandbox mode — use Unit's test ACH tools to fund an account"
-    );
+    if (!account.external_account_id) {
+      throw new Error("This account isn't a live Unit sandbox account yet");
+    }
+    await unit.simulateDeposit({
+      externalAccountId: account.external_account_id,
+      amountCents,
+      description,
+    });
   }
+
   return simulated.deposit({ accountId, amountCents, description });
 }
 
