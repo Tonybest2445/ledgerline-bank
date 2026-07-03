@@ -242,16 +242,20 @@
   }
 
   async function openAccount() {
-    await api("/accounts", {
-      method: "POST",
-      body: JSON.stringify({
-        type: document.getElementById("newAcctType").value,
-        name: document.getElementById("newAcctName").value,
-      }),
-    });
-    document.getElementById("newAcctName").value = "";
-    await refreshAccounts();
-  }
+    try {
+      await api("/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          type: document.getElementById("newAcctType").value,
+          name: document.getElementById("newAcctName").value,
+        }),
+      });
+      document.getElementById("newAcctName").value = "";
+      await refreshAccounts();
+    } catch (err) {
+      alert("Couldn't open account: " + err.message);
+    }
+ }
 
   async function seedDeposit() {
     const accountId = document.getElementById("seedAcct").value;
