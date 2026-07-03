@@ -34,6 +34,7 @@ async function unitRequest(path, { method = "GET", body } = {}) {
 
   if (!res.ok) {
     const message = json?.errors?.[0]?.title || `Unit API error (${res.status})`;
+    console.log(`[Unit] Request to ${path} failed (${res.status}):`, JSON.stringify(json));
     const err = new Error(message);
     err.details = json;
     throw err;
@@ -71,15 +72,14 @@ async function createCustomer({ fullName, email, ssn = "072052765", dob = "2001-
     },
   };
 
+  console.log(`[Unit] Creating application for ${email} against ${BASE_URL}`);
   const result = await unitRequest("/applications", { method: "POST", body: payload });
   const applicationId = result.data.id;
-  let status = result.data.attributes.status; // "Approved" | "Pending" | "Denied" | "AwaitingDocuments" | "PendingReview"
+  let status = result.data.attributes.status;
   let customerId = result.data.relationships?.customer?.data?.id || null;
 
-  // Sandbox-only safety net: some test data lands in manual review instead of
-  // instant approval. Unit's sandbox provides a simulation endpoint made exactly
-  // for this — force-approve so testing isn't blocked on underwriting quirks.
-  // https://docs.unit.co/simulations (Approve an Application)
+  console.log(`[Unit] Application ${applicationId} created with status: ${status}`);
+
   if (status !== "Approved" && status !== "Denied") {
     await unitRequest(`/sandbox/applications/${applicationId}/approve`, {
       method: "POST",
@@ -89,6 +89,14 @@ async function createCustomer({ fullName, email, ssn = "072052765", dob = "2001-
     const refreshed = await unitRequest(`/applications/${applicationId}`);
     status = refreshed.data.attributes.status;
     customerId = refreshed.data.relationships?.customer?.data?.id || null;
+    console.log(`[Unit] After force-approve, status: ${status}, customerId: ${customerId}`);
+  }
+
+  if (status === "Denied") {
+    console.log(`[Unit] Application denied. Full response:`, JSON.stringify(result.data));
+    throw new Error(
+      "Unit denied this sandbox application — check dashboard.unit.co → Applications for the reason"
+    );
   }
 
   return { applicationId, status, externalCustomerId: customerId };
@@ -154,4 +162,4 @@ module.exports = {
   createAccount,
   transfer,
   getAccount,
-};
+};￼Enter
