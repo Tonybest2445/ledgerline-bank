@@ -76,7 +76,7 @@ async function createCustomer({ fullName, email, ssn = "072052765", dob = "2001-
 
   const result = await unitRequest("/applications", { method: "POST", body: payload });
   const applicationId = result.data.id;
-  let status = result.data.attributes.status; // "Approved" | "Pending" | "Denied" | "AwaitingDocuments" | "PendingReview"
+  let status = result.data.attributes.status;
   let customerId = result.data.relationships?.customer?.data?.id || null;
 
   console.log(`[Unit] Application ${applicationId} created with status: ${status}`);
@@ -133,6 +133,27 @@ async function createAccount({ externalCustomerId, type = "checking", name }) {
   };
 }
 
+// Sandbox-only: simulate an incoming ACH deposit, since sandbox accounts don't
+// receive real money. https://docs.unit.co/simulations (Simulate Received ACH Payment)
+async function simulateDeposit({ externalAccountId, amountCents, description }) {
+  const payload = {
+    data: {
+      type: "achPayment",
+      attributes: {
+        amount: amountCents,
+        direction: "Credit",
+        description: description || "Sandbox deposit",
+      },
+      relationships: {
+        account: { data: { type: "depositAccount", id: externalAccountId } },
+      },
+    },
+  };
+
+  const result = await unitRequest("/sandbox/payments", { method: "POST", body: payload });
+  return { id: result.data.id, status: result.data.attributes.status };
+}
+
 // Book payment = instant internal transfer between two Unit accounts (both must be Unit accounts).
 // For sending money outside Unit entirely, use an achPayment instead:
 // https://docs.unit.co/payments#create-ach-payment
@@ -162,5 +183,6 @@ module.exports = {
   createCustomer,
   createAccount,
   transfer,
+  simulateDeposit,
   getAccount,
 };
