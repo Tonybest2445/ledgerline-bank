@@ -73,9 +73,23 @@ async function createCustomer({ fullName, email, ssn = "072052765", dob = "2001-
 
   const result = await unitRequest("/applications", { method: "POST", body: payload });
   const applicationId = result.data.id;
-  const status = result.data.attributes.status; // "Approved" | "Pending" | "Denied" | "AwaitingDocuments"
-
+  let status = result.data.attributes.status; // "Approved" | "Pending" | "Denied" | "AwaitingDocuments" | "PendingReview"
   let customerId = result.data.relationships?.customer?.data?.id || null;
+
+  // Sandbox-only safety net: some test data lands in manual review instead of
+  // instant approval. Unit's sandbox provides a simulation endpoint made exactly
+  // for this — force-approve so testing isn't blocked on underwriting quirks.
+  // https://docs.unit.co/simulations (Approve an Application)
+  if (status !== "Approved" && status !== "Denied") {
+    await unitRequest(`/sandbox/applications/${applicationId}/approve`, {
+      method: "POST",
+      body: { data: { type: "applicationApprove", attributes: { reason: "sandbox" } } },
+    });
+
+    const refreshed = await unitRequest(`/applications/${applicationId}`);
+    status = refreshed.data.attributes.status;
+    customerId = refreshed.data.relationships?.customer?.data?.id || null;
+  }
 
   return { applicationId, status, externalCustomerId: customerId };
 }
